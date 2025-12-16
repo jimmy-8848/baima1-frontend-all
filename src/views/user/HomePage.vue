@@ -4,6 +4,7 @@ import {apiGet} from "@/net/index.js";
 import ProductCard from "@/components/ProductCard.vue";
 import {useRoute, useRouter} from "vue-router";
 import {ElMessage} from "element-plus";
+import {Search} from "@element-plus/icons-vue";
 
 const route = useRoute()
 const router = useRouter()
@@ -71,6 +72,12 @@ function handlePageChange(page) {
 function clearKeyword() {
   filters.keyword = ''
   router.replace({query: {}})
+  fetchProducts()
+}
+
+function handleSearch() {
+  router.replace({query: {keyword: filters.keyword || undefined}})
+  pagination.pageNum = 1
   fetchProducts()
 }
 </script>

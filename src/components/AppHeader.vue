@@ -1,16 +1,26 @@
 <script setup>
-import {computed, ref} from "vue";
+import {computed, ref, watch} from "vue";
 import router from "@/router/index.js";
 import {logout, getTokenInfo} from "@/net/index.js";
 import {Search, ShoppingCart, List, UserFilled} from "@element-plus/icons-vue";
 import {ElMessageBox} from "element-plus";
+import {useRoute} from "vue-router";
 
-const searchText = ref('');
-
+const route = useRoute();
 const userName = computed(() => getTokenInfo()?.username || '用户');
+const searchText = ref(route.query.keyword || '');
+
+// 监听路由变化，同步搜索框内容
+watch(() => route.query.keyword, (newKeyword) => {
+  searchText.value = newKeyword || '';
+}, { immediate: true });
 
 function handleSearch() {
-  if (!searchText.value) return;
+  if (!searchText.value.trim()) {
+    // 如果搜索框为空，清除搜索参数
+    router.push({name: 'home', query: {}});
+    return;
+  }
   router.push({name: 'home', query: {keyword: searchText.value}});
 }
 
@@ -38,10 +48,14 @@ function handleLogout() {
     <div class="header-search">
       <el-input
           v-model="searchText"
-          placeholder="搜索商品名称"
+          placeholder="搜索商品名称、关键词..."
           clearable
           @keyup.enter="handleSearch"
+          @clear="handleSearch"
       >
+        <template #prefix>
+          <el-icon class="search-icon"><Search/></el-icon>
+        </template>
         <template #suffix>
           <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
         </template>
@@ -49,6 +63,7 @@ function handleLogout() {
     </div>
 
     <div class="header-actions">
+      <el-button text :icon="Search" @click="handleNav('/home')">搜索</el-button>
       <el-button text :icon="List" @click="handleNav('/home')">首页</el-button>
       <el-button text :icon="ShoppingCart" @click="handleNav('/cart')">购物车</el-button>
       <el-dropdown>
@@ -77,8 +92,10 @@ function handleLogout() {
   z-index: 1000;
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(10px);
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
+  gap: 20px;
   padding: 16px 40px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   border-bottom: 1px solid rgba(0, 0, 0, 0.05);
@@ -89,6 +106,7 @@ function handleLogout() {
   align-items: center;
   gap: 14px;
   transition: transform 0.2s ease;
+  flex-shrink: 0;
 }
 
 .header-left:hover {
@@ -125,24 +143,42 @@ function handleLogout() {
 
 .header-search {
   flex: 1;
-  padding: 0 32px;
   max-width: 600px;
+  margin: 0 40px;
 }
 
 .header-search :deep(.el-input__wrapper) {
   border-radius: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   transition: all 0.3s ease;
+  padding: 8px 16px;
 }
 
 .header-search :deep(.el-input__wrapper:hover) {
-  box-shadow: 0 4px 12px rgba(76, 111, 255, 0.15);
+  box-shadow: 0 4px 16px rgba(76, 111, 255, 0.2);
+}
+
+.header-search :deep(.el-input.is-focus .el-input__wrapper) {
+  box-shadow: 0 4px 20px rgba(76, 111, 255, 0.3);
+  border-color: #4c6fff;
+}
+
+.search-icon {
+  color: #9ca3af;
+  font-size: 18px;
+}
+
+.header-search :deep(.el-button) {
+  border-radius: 8px;
+  font-weight: 600;
+  margin-left: 8px;
 }
 
 .header-actions {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .header-actions :deep(.el-button) {
