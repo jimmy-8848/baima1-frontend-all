@@ -70,7 +70,7 @@ function handlerRegister(){
     if(valid){
       post('/auth/register',{...form},()=>{
         ElMessage.success('注册成功')
-        router.push('/')
+        router.push('/welcome')
       })
     }else{
       ElMessage.warning('请完整填写表单内容')

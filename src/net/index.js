@@ -2,97 +2,190 @@ import {ElMessage} from "element-plus";
 import axios from "axios";
 
 const access_token = 'access_token'
+const user_profile = 'user_profile'
 
-//默认失败和错误方法
-function defaultFailure(url,code,message){
+const api = axios.create({
+    baseURL: 'http://localhost:8080/api',
+    timeout: 15000
+});
+
+api.interceptors.request.use(config => {
+    const token = getToken()
+    if (token) {
+        config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+})
+
+function toastFailure(url, code, message) {
     console.warn(`错误路径:${url},错误码:${code},错误信息:${message}`)
     ElMessage.warning(message)
 }
 
-function defaultError(error){
+function toastError(error) {
     console.error(error)
     ElMessage.error('发生了一些错误，请联系管理员')
 }
 
-//token存 取 删
-function storeToken(token,expire,remember){
-    const tokenObj = {token,expire}
+function storeToken(token, expire, remember, extraUser = {}) {
+    const tokenObj = {token, expire}
     const tokenObjString = JSON.stringify(tokenObj)
-    if(remember) localStorage.setItem(access_token,tokenObjString)
-    else sessionStorage.setItem(access_token,tokenObjString)
+    if (remember) localStorage.setItem(access_token, tokenObjString)
+    else sessionStorage.setItem(access_token, tokenObjString)
+    if (extraUser) {
+        localStorage.setItem(user_profile, JSON.stringify(extraUser))
+    }
 }
 
-function deleteToken(){
+function deleteToken() {
     localStorage.removeItem(access_token)
     sessionStorage.removeItem(access_token)
+    localStorage.removeItem(user_profile)
 }
 
-function getToken(){
-    const tokenObjString =     localStorage.getItem(access_token) || sessionStorage.getItem(access_token)
-    if(tokenObjString) {
+function getTokenInfo() {
+    const tokenObjString = localStorage.getItem(access_token) || sessionStorage.getItem(access_token)
+    if (tokenObjString) {
         const tokenObj = JSON.parse(tokenObjString)
-        if(tokenObj.expire <= new Date()) {
+        if (new Date(tokenObj.expire) <= new Date()) {
             deleteToken()
             ElMessage.warning('令牌过期，请重新登录')
             return null
         }
-        else return tokenObj.token
-    }else{
+        return tokenObj
+    }
+    return null
+}
+
+function getToken() {
+    const info = getTokenInfo()
+    return info?.token || null
+}
+
+function getUserProfile() {
+    const profileStr = localStorage.getItem(user_profile)
+    if (!profileStr) return null
+    try {
+        return JSON.parse(profileStr)
+    } catch {
         return null
     }
 }
 
-//获取token请求头
-function getAccessHeader(){
-    const token = getToken()
-    return token?{Authorization:`Bearer ${token}`}:{}
-}
-
-//通用post和get方法
-function internalPost(url,data,header,success,failure,err=defaultError){
-    axios.post(url,data,{headers:header}).then(({data})=>{
-        if(data.code ===200) success(data.data)
-        else failure(url,data.code,data.message)
-    }).catch(error=>err(error))
-}
-
-function internalGet(url,header,success,failure,err=defaultError){
-    axios.get(url,{headers:header}).then(({data})=>{
-        if(data.code ===200) success(data.data)
-        else failure(url,data.code,data.message)
-    }).catch(error=>err(error))
-}
-
-//自带token的post和get方法
-function post(url,data,success,failure=defaultFailure){
-    internalPost(url,data,getAccessHeader(),success,failure)
-}
-function get(url,success,failure=defaultFailure){
-    internalGet(url,getAccessHeader(),success,failure)
-}
-
-//login方法
-function login(username,password,remember,success){
-    internalPost('/auth/login',{username:username,password:password},
-        {'Content-Type':'application/x-www-form-urlencoded'},
-        (data)=>{
-        ElMessage.success(`登录成功，欢迎${data.username}进入我们的系统`)
-            storeToken(data.token,data.expire,remember)
-            success()
-        },defaultFailure)
-}
-
-//logout方法
-function logout(success){
-    get('/auth/logout',()=>{
-        ElMessage.success('退出登录成功')
-        deleteToken()
-        success()
+//通用 post/get（promise 版）
+function apiPost(url, data = {}, onFail = toastFailure) {
+    return api.post(url, data).then(({data}) => {
+        if (data.code === 200) return data.data
+        onFail(url, data.code, data.message)
+        throw new Error(data.message)
+    }).catch(err => {
+        toastError(err)
+        throw err
     })
 }
 
-//是否有token
-function isUnauthorizedToken(){
+function apiGet(url, params = {}, onFail = toastFailure) {
+    return api.get(url, {params}).then(({data}) => {
+        if (data.code === 200) return data.data
+        onFail(url, data.code, data.message)
+        throw new Error(data.message)
+    }).catch(err => {
+        toastError(err)
+        throw err
+    })
+}
+
+function apiDelete(url, params = {}, onFail = toastFailure) {
+    return api.delete(url, {params}).then(({data}) => {
+        if (data.code === 200) return data.data
+        onFail(url, data.code, data.message)
+        throw new Error(data.message)
+    }).catch(err => {
+        toastError(err)
+        throw err
+    })
+}
+
+function apiPut(url, data = {}, onFail = toastFailure) {
+    return api.put(url, data).then(({data}) => {
+        if (data.code === 200) return data.data
+        onFail(url, data.code, data.message)
+        throw new Error(data.message)
+    }).catch(err => {
+        toastError(err)
+        throw err
+    })
+}
+
+// 保持原有回调风格
+function internalPost(url, data, success, failure = toastFailure) {
+    apiPost(url, data, failure).then(res => success && success(res)).catch(() => {})
+}
+
+function internalGet(url, paramsOrSuccess, successOrFailure, maybeFailure) {
+    let params = {}
+    let success = paramsOrSuccess
+    let failure = successOrFailure
+    if (typeof paramsOrSuccess === 'object') {
+        params = paramsOrSuccess
+        success = successOrFailure
+        failure = maybeFailure
+    }
+    if (typeof failure !== 'function') failure = toastFailure
+    apiGet(url, params, failure).then(res => success && success(res)).catch(() => {})
+}
+
+function internalDelete(url, success, failure = toastFailure) {
+    apiDelete(url, {}, failure).then(res => success && success(res)).catch(() => {})
+}
+
+// login
+function login(username, password, remember, success) {
+    api.post('/auth/login', {username, password}, {
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'}
+    }).then(({data}) => {
+        if (data.code === 200) {
+            const user = data.data
+            ElMessage.success(`登录成功，欢迎${user.username || username}进入系统`)
+            const expire = user.expire || new Date(Date.now() + 7 * 24 * 3600 * 1000)
+            storeToken(user.token, expire, remember, {
+                username: user.username,
+                userId: user.id || user.userId,
+                role: user.role
+            })
+            if (typeof success === 'function') {
+                success(user)
+            }
+        } else {
+            toastFailure('/auth/login', data.code, data.message)
+        }
+    }).catch(toastError)
+}
+
+// logout
+function logout(success) {
+    apiGet('/auth/logout').finally(() => {
+        ElMessage.success('退出登录成功')
+        deleteToken()
+        success && success()
+    })
+}
+
+function isUnauthorizedToken() {
     return !getToken()
 }
-export {isUnauthorizedToken,login,logout,post,get}
+
+export {
+    isUnauthorizedToken,
+    login,
+    logout,
+    internalPost as post,
+    internalGet as get,
+    apiGet,
+    apiPost,
+    apiDelete,
+    apiPut,
+    getToken,
+    getTokenInfo,
+    getUserProfile
+}

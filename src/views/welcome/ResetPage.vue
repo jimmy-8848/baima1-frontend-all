@@ -75,7 +75,7 @@ function doReset(){
     if(valid){
       post('/auth/reset-password',{...form},()=>{
         ElMessage.success('重置密码成功')
-        router.push('/')
+        router.push('/welcome')
       })
     }else{
       ElMessage.warning('请完整填写表单内容')
