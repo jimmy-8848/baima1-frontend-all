@@ -2,6 +2,7 @@
 import {computed, onMounted, reactive, ref} from "vue";
 import {apiGet, apiPost} from "@/net/index.js";
 import {ElMessage, ElMessageBox} from "element-plus";
+import {InfoFilled} from "@element-plus/icons-vue";
 
 const loading = ref(false)
 const list = ref([])
@@ -60,31 +61,73 @@ function openAdd() {
 function openEdit(row) {
   // 加载单个商品详情用于编辑
   apiGet(`/admin/product/${row.id}`).then(res => {
+    // 只设置需要编辑的字段，避免携带不必要的数据
     form.id = res.id
     form.name = res.name
     form.categoryId = res.categoryId
-    form.description = res.description
+    form.description = res.description || ""
     form.skuList = (res.skuList && res.skuList.length)
-        ? res.skuList.map(s => ({ spec: s.spec, price: s.price, stock: s.stock }))
+        ? res.skuList.map(s => ({ 
+            spec: s.spec || "", 
+            price: Number(s.price) || 0, 
+            stock: Number(s.stock) || 0 
+          }))
         : [{ spec: "", price: 0, stock: 0 }]
     dialogVisible.value = true
+  }).catch(() => {
+    // 错误已在 apiGet 中处理，这里不再重复提示
+    console.error("加载商品详情失败")
   })
 }
 
 function save() {
   formRef.value.validate(valid => {
     if (!valid) return
-    if (!form.skuList.length || !form.skuList[0].spec) {
-      ElMessage.warning("请至少填写一个规格")
+    
+    // 验证至少有一个有效的规格
+    const validSkus = form.skuList.filter(s => s.spec && s.spec.trim())
+    if (!validSkus.length) {
+      ElMessage.warning("请至少填写一个完整的商品规格")
       return
     }
+    
+    // 验证每个规格的价格和库存
+    for (let i = 0; i < validSkus.length; i++) {
+      const sku = validSkus[i]
+      if (!sku.price || sku.price <= 0) {
+        ElMessage.warning(`第${i + 1}个规格的价格必须大于0`)
+        return
+      }
+      if (sku.stock === null || sku.stock === undefined || sku.stock < 0) {
+        ElMessage.warning(`第${i + 1}个规格的库存不能为负数`)
+        return
+      }
+    }
+    
+    // 构建提交数据，只包含必要的字段
+    const submitData = {
+      id: form.id,
+      name: form.name,
+      categoryId: form.categoryId,
+      description: form.description,
+      skuList: validSkus.map(sku => ({
+        spec: sku.spec.trim(),
+        price: Number(sku.price),
+        stock: Number(sku.stock)
+      }))
+    }
+    
     const request = form.id
-        ? apiPost("/admin/product/update", form)  // 更新用 POST，后端接受 ProductVO（包含 id）
-        : apiPost("/admin/product", form)         // 新增用 POST
+        ? apiPost("/admin/product/update", submitData)
+        : apiPost("/admin/product", submitData)
+        
     request.then(() => {
-      ElMessage.success("商品已保存")
+      ElMessage.success(form.id ? "商品更新成功" : "商品添加成功")
       dialogVisible.value = false
       loadProducts()
+    }).catch(() => {
+      // 错误已在 apiPost 中处理，这里不再重复提示
+      console.error("保存商品失败")
     })
   })
 }
@@ -161,15 +204,56 @@ function toggleStatus(row, val) {
           <el-input type="textarea" v-model="form.description" maxlength="500"/>
         </el-form-item>
 
-        <el-form-item label="规格价格">
-          <div class="sku-list">
-            <div v-for="(sku, index) in form.skuList" :key="index" class="sku-row">
-              <el-input v-model="sku.spec" placeholder="规格，如 128GB 黑色" style="width: 220px"/>
-              <el-input-number v-model="sku.price" :min="0" :step="1" style="width: 140px" />
-              <el-input-number v-model="sku.stock" :min="0" :step="1" style="width: 120px" />
-              <el-button type="text" @click="removeSku(index)">删除</el-button>
+        <el-form-item label="商品规格" required>
+          <div class="sku-container">
+            <div class="sku-header">
+              <span class="sku-col-spec">规格名称</span>
+              <span class="sku-col-price">价格(元)</span>
+              <span class="sku-col-stock">库存数量</span>
+              <span class="sku-col-action">操作</span>
             </div>
-            <el-button type="primary" text @click="addSku">新增规格</el-button>
+            <div v-for="(sku, index) in form.skuList" :key="index" class="sku-row">
+              <el-input 
+                v-model="sku.spec" 
+                placeholder="例如：128GB 黑色" 
+                class="sku-col-spec"
+                clearable
+              />
+              <el-input-number 
+                v-model="sku.price" 
+                :min="0" 
+                :step="0.01"
+                :precision="2"
+                placeholder="0.00"
+                class="sku-col-price"
+                controls-position="right"
+              />
+              <el-input-number 
+                v-model="sku.stock" 
+                :min="0" 
+                :step="1"
+                placeholder="0"
+                class="sku-col-stock"
+                controls-position="right"
+              />
+              <div class="sku-col-action">
+                <el-button 
+                  type="danger" 
+                  text 
+                  @click="removeSku(index)"
+                  :disabled="form.skuList.length === 1"
+                >
+                  删除
+                </el-button>
+              </div>
+            </div>
+            <el-button type="primary" :icon="'Plus'" @click="addSku" class="add-sku-btn">
+              添加规格
+            </el-button>
+            <div class="sku-tip">
+              <el-icon><InfoFilled /></el-icon>
+              提示：至少需要添加一个商品规格，规格名称如"红色-S码"、"128GB 黑色"等
+            </div>
           </div>
         </el-form-item>
       </el-form>
@@ -239,16 +323,78 @@ function toggleStatus(row, val) {
   background: #fafbfc;
 }
 
-.sku-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.sku-container {
+  width: 100%;
+}
+
+.sku-header {
+  display: grid;
+  grid-template-columns: 2fr 1.2fr 1.2fr 100px;
+  gap: 12px;
+  padding: 12px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  font-weight: 600;
+  color: #606266;
+  font-size: 14px;
+  margin-bottom: 8px;
 }
 
 .sku-row {
-  display: flex;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: 2fr 1.2fr 1.2fr 100px;
+  gap: 12px;
   align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.sku-row:last-of-type {
+  border-bottom: none;
+  margin-bottom: 12px;
+}
+
+.sku-col-spec {
+  min-width: 0;
+}
+
+.sku-col-price {
+  min-width: 0;
+}
+
+.sku-col-stock {
+  min-width: 0;
+}
+
+.sku-col-action {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.add-sku-btn {
+  width: 100%;
+  margin-top: 8px;
+  border-style: dashed;
+}
+
+.sku-tip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #ecf5ff;
+  border: 1px solid #d9ecff;
+  border-radius: 6px;
+  color: #409eff;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.sku-tip .el-icon {
+  font-size: 16px;
+  flex-shrink: 0;
 }
 </style>
 

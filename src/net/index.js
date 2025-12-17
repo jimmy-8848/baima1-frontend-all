@@ -24,7 +24,10 @@ function toastFailure(url, code, message) {
 
 function toastError(error) {
     console.error(error)
-    ElMessage.error('发生了一些错误，请联系管理员')
+    // 只在没有响应数据时才显示通用错误
+    if (!error.response || !error.response.data) {
+        ElMessage.error('网络连接失败，请检查网络或联系管理员')
+    }
 }
 
 function storeToken(token, expire, remember, extraUser = {}) {
